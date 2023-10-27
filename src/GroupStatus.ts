@@ -1,11 +1,11 @@
 export const GROUP_STATUS = {
-    gid: Number,
-    groupName: String,
-    completionState: Number,
+    gid:               Number,
+    groupName:         String,
+    completionState:   Number,
     lastEpisodeNumber: Number,
-    rating: Number,
-    voteCount: Number,
-    episodeRange: String
+    rating:            Number,
+    voteCount:         Number,
+    episodeRange:      String
 } as const;
 
 export type GroupStatus = {

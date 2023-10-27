@@ -4,6 +4,9 @@ import { DEFAULT_LISTENING_PORT, DEFAULT_API_URL, DEFAULT_API_PORT, PROTOVER, Re
 import { EPISODE, Episode } from './Episode.js';
 import { GROUP_STATUS, GroupStatus } from './GroupStatus.js';
 import { FAnime, FILE_MASK, F_ANIME_MASK, File, generateFAnimeMask, generateFileMask } from './File.js';
+import { ANIME_BLOCK, AnimeBlock, CHARACTER, Character } from './Character.js';
+import { CREATOR, Creator } from './Creator.js';
+import { GROUP, GROUP_RELATION, Group, GroupRelation } from './Group.js';
 
 const convertParams = (params: Record<string, string>) =>
     Object.entries(params)
@@ -251,6 +254,120 @@ export default class AniDBClient {
                         .toString('utf-8')
                         .split('|')
                 }
+            default:
+                console.log(data.toString('utf-8'));
+                throw new Error('Unexpected result');
+        }
+    }
+
+    async character(charid: number) {
+        if (!this.session) 
+            throw new Error('Not authenticated');
+
+        const params = convertParams({
+            charid: `${charid}`,
+            s: this.session
+        });
+        const data = await this.sendCommand(`CHARACTER ${params}`);
+        const returnCode = data.subarray(0, 3).toString('utf-8');
+
+        switch (returnCode) {
+            case ReturnCode.CHARACTER:
+                const keys = Object.keys(CHARACTER) as Array<keyof Character>;
+                const entries = data
+                    .subarray(data.indexOf(10) + 1, data.lastIndexOf(10))
+                    .toString('utf-8')
+                    .split('|')
+                    .map((val, i) => {
+                        if (keys[i] === 'animeBlocks') {
+                            const blocks = val.split("'")
+                                .map(block => {
+                                    const keys = Object.keys(ANIME_BLOCK) as Array<keyof AnimeBlock>;
+                                    return block.split(',').reduce((obj: any, val, i) => {
+                                        obj[keys[i]] = ANIME_BLOCK[keys[i]](val ?? 0);
+                                        return obj;
+                                    }, {}) as AnimeBlock;
+                                });
+                            return [keys[i], blocks];
+                        } else if (keys[i] === 'episodeList') {
+                            return [keys[i], val];
+                        } else {
+                            const Constructor = CHARACTER[keys[i]] as NumberConstructor | StringConstructor;
+                            return [keys[i], Constructor(val)];
+                        }
+                    });
+                
+                return Object.fromEntries(entries) as Character;
+            default:
+                console.log(data.toString('utf-8'));
+                throw new Error('Unexpected result');
+        }
+    }
+
+    async creator(creatorid: number) {
+        if (!this.session) 
+            throw new Error('Not authenticated');
+
+        const params = convertParams({
+            creatorid: `${creatorid}`,
+            s: this.session
+        });
+        const data = await this.sendCommand(`CREATOR ${params}`);
+        const returnCode = data.subarray(0, 3).toString('utf-8');
+
+        switch (returnCode) {
+            case ReturnCode.CREATOR:
+                const keys = Object.keys(CREATOR) as Array<keyof Creator>;
+                const entries = data
+                    .subarray(data.indexOf(10) + 1, data.lastIndexOf(10))
+                    .toString('utf-8')
+                    .split('|')
+                    .map((val, i) => [keys[i], CREATOR[keys[i]](val)]);
+                    
+                return Object.fromEntries(entries) as Creator;
+            default:
+                console.log(data.toString('utf-8'));
+                throw new Error('Unexpected result');
+        }
+    }
+
+    async group(gid: number) {
+        if (!this.session) 
+            throw new Error('Not authenticated');
+
+        const params = convertParams({
+            gid: `${gid}`,
+            s: this.session
+        });
+        const data = await this.sendCommand(`GROUP ${params}`);
+        const returnCode = data.subarray(0, 3).toString('utf-8');
+
+        switch (returnCode) {
+            case ReturnCode.GROUP:
+                const keys = Object.keys(GROUP) as Array<keyof Group>;
+                const entries = data
+                    .subarray(data.indexOf(10) + 1, data.lastIndexOf(10))
+                    .toString('utf-8')
+                    .split('|')
+                    .map((val, i) => {
+                        if (keys[i] === 'groupRelations') {
+                            const blocks = val.split("'")
+                                .map(block => {
+                                    const keys = Object.keys(GROUP_RELATION) as Array<keyof GroupRelation>;
+                                    return block.split(',').reduce((obj: any, val, i) => {
+                                        obj[keys[i]] = GROUP_RELATION[keys[i]](val ?? 0);
+                                        return obj;
+                                    }, {}) as GroupRelation;
+                                });
+                            return [keys[i], blocks];
+                        } else {
+                            const Constructor = GROUP[keys[i]] as NumberConstructor | StringConstructor;
+                            return [keys[i], Constructor(val)];
+                        }
+                    });
+                        
+                return Object.fromEntries(entries) as Group;
+
             default:
                 console.log(data.toString('utf-8'));
                 throw new Error('Unexpected result');
