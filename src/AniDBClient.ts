@@ -1,12 +1,13 @@
 import { RemoteInfo, Socket, createSocket } from 'node:dgram';
-import { Anime, ANIME_MASK, AnimeResult, generateAnimeMask } from './Anime.js';
+import { Anime, ANIME_MASK, AnimeResult, generateAnimeMask } from './payloads/Anime.js';
 import { DEFAULT_LISTENING_PORT, DEFAULT_API_URL, DEFAULT_API_PORT, PROTOVER, ReturnCode, TAG_LENGTH, TAG_CHARACTERS } from './constants.js';
-import { EPISODE, Episode } from './Episode.js';
-import { GROUP_STATUS, GroupStatus } from './GroupStatus.js';
-import { FAnime, FILE_MASK, F_ANIME_MASK, File, FileResult, generateFAnimeMask, generateFileMask } from './File.js';
-import { ANIME_BLOCK, AnimeBlock, CHARACTER, Character } from './Character.js';
-import { CREATOR, Creator } from './Creator.js';
-import { GROUP, GROUP_RELATION, Group, GroupRelation } from './Group.js';
+import { EPISODE, Episode } from './payloads/Episode.js';
+import { GROUP_STATUS, GroupStatus } from './payloads/GroupStatus.js';
+import { FAnime, FILE_MASK, F_ANIME_MASK, File, FileResult, generateFAnimeMask, generateFileMask } from './payloads/File.js';
+import { ANIME_BLOCK, AnimeBlock, CHARACTER, Character } from './payloads/Character.js';
+import { CREATOR, Creator } from './payloads/Creator.js';
+import { GROUP, GROUP_RELATION, Group, GroupRelation } from './payloads/Group.js';
+import { ANIME_DESCRIPTION, AnimeDescription } from './payloads/AnimeDescription.js';
 
 const convertParams = (params: Record<string, string>) =>
     Object.entries(params)
@@ -137,13 +138,13 @@ export default class AniDBClient {
         console.log(res.toString());
     }
 
-    async anime<T extends keyof Anime>(aid: number, fields?: Array<T>): Promise<AnimeResult<T>>;
-    async anime<T extends keyof Anime>(aname: string, fields?: Array<T>): Promise<AnimeResult<T>>;
-    async anime<T extends keyof Anime>(a: number | string, fields?: Array<T>) {
+    async anime<T extends keyof Anime>(aid: number, fields?: T[]): Promise<AnimeResult<T>>;
+    async anime<T extends keyof Anime>(aname: string, fields?: T[]): Promise<AnimeResult<T>>;
+    async anime<T extends keyof Anime>(a: number | string, fields?: T[]) {
         if (!this.session) 
             throw new Error('Not authenticated');
 
-        const keys = fields ?? Object.keys(ANIME_MASK) as Array<T>;
+        const keys = (Object.keys(ANIME_MASK) as T[]).filter(key => fields?.includes(key) ?? true);
 
         const rawParams: Record<string, string> = {
             amask: generateAnimeMask(keys),
@@ -173,6 +174,43 @@ export default class AniDBClient {
 
                 return Object.fromEntries(entries as any) as Pick<Anime, T>;
             case ReturnCode.NO_SUCH_ANIME:
+                return;
+            default:
+                console.log(data.toString('utf-8'));
+                throw new Error('Unexpected result');
+        }
+    }
+
+    async animeDescription(aid: number): Promise<string | undefined>;
+    async animeDescription(aid: number, partNum: number): Promise<string | undefined>;
+    async animeDescription(aid: number, partNum?: number) {
+        if (!this.session) 
+            throw new Error('Not authenticated');
+
+        const params = convertParams({
+            aid: `${aid}`,
+            part: `${partNum ?? 0}`,
+            s: this.session
+        });
+        const data = await this.sendCommand(`ANIMEDESC ${params}`);
+        const returnCode = data.subarray(6, 9).toString('utf-8');
+
+        switch (returnCode) {
+            case ReturnCode.ANIME_DESCRIPTION:
+                const keys = Object.keys(ANIME_DESCRIPTION) as Array<keyof AnimeDescription>;
+                const entries = data
+                    .subarray(data.indexOf(10) + 1, data.lastIndexOf(10))
+                    .toString('utf-8')
+                    .split('|')
+                    .map((val, i) => [keys[i], ANIME_DESCRIPTION[keys[i]](val)]);
+
+                const { currentPart, maxParts, description } = Object.fromEntries(entries) as AnimeDescription;
+                if (currentPart + 1 === maxParts)
+                    return description;
+                else
+                    return description + this.animeDescription(aid, currentPart + 1);
+            case ReturnCode.NO_SUCH_ANIME:
+            case ReturnCode.NO_SUCH_DESCRIPTION:
                 return;
             default:
                 console.log(data.toString('utf-8'));
@@ -300,7 +338,7 @@ export default class AniDBClient {
             s: this.session
         }
 
-        let fileKeys: F[];
+        let fileKeys: (F | 'fid')[];
         let animeKeys: A[];
 
         switch (typeof param3) {
@@ -318,19 +356,25 @@ export default class AniDBClient {
                 ] = `${param2}`;
                 rawParams['epno'] = `${param3}`;
 
-                fileKeys = (param4 as F[] | undefined) ?? Object.keys(FILE_MASK) as F[];
-                animeKeys = param5 ?? Object.keys(F_ANIME_MASK) as A[];
+                fileKeys = (Object.keys(FILE_MASK) as F[])
+                    .filter(key => ((param4 as F[] | undefined)?.includes(key as F) ?? true) || key === 'fid');
+                animeKeys = (Object.keys(F_ANIME_MASK) as A[])
+                    .filter(key => param5?.includes(key) ?? true);
                 break;
             default:
                 if (typeof param2 === 'string') {
                     rawParams['size'] = `${param1}`;
                     rawParams['ed2k'] = `${param2}`;
-                    fileKeys = (param3 as F[] | undefined) ?? Object.keys(FILE_MASK) as F[];
-                    animeKeys = (param4 as A[] | undefined) ?? Object.keys(F_ANIME_MASK) as A[];
+                    fileKeys = (Object.keys(FILE_MASK) as F[])
+                        .filter(key => ((param3 as F[] | undefined)?.includes(key) ?? true) || key === 'fid');
+                    animeKeys = (Object.keys(F_ANIME_MASK) as A[])
+                        .filter(key => (param4 as A[] | undefined)?.includes(key) ?? true);
                 } else {
                     rawParams['fid'] = `${param1}`;
-                    fileKeys = (param2 as F[] | undefined) ?? Object.keys(FILE_MASK) as F[];
-                    animeKeys = (param3 as A[] | undefined) ?? Object.keys(F_ANIME_MASK) as A[];
+                    fileKeys = (Object.keys(FILE_MASK) as F[])
+                        .filter(key => ((param2 as F[] | undefined)?.includes(key) ?? true) || key === 'fid');
+                    animeKeys = (Object.keys(F_ANIME_MASK) as A[])
+                        .filter(key => (param3 as A[] | undefined)?.includes(key) ?? true);
                 }
         }
 

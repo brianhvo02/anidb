@@ -15,16 +15,21 @@ const client = await AniDBClient.init(process.env.CLIENT_ID, 1, true);
 
 try {
     await client.authenticate(process.env.USERNAME, process.env.PASSWORD);
-    // const anime1 = await client.anime(12012);
+    // const anime1 = await client.anime(13538);
     // console.log(anime1);
-    // const anime2 = await client.anime('Tsurune: Kazemai High School Kyudo Club', ['kanjiName']);
+    // const anime2 = await client.anime('Tsurune: The Linking Shot');
     // console.log(anime2);
+
+    // const animeDesc = await client.animeDescription(13538);
+    // console.log(animeDesc);
+
     // const episode1 = await client.episode(13538, 'S1');
     // console.log(episode1);
     // const episode2 = await client.episode('Tsurune: Kazemai High School Kyudo Club', 1);
     // console.log(episode2);
     // const episode3 = await client.episode(208556);
     // console.log(episode3);
+
     // const groupStatus = await client.groupStatus(12012);
     // console.log(groupStatus);
 
@@ -43,8 +48,10 @@ try {
 
     // const character = await client.character(81291);
     // console.dir(character, { depth: Infinity });
+
     // const creator = await client.creator(200);
     // console.log(creator);
+
     // const group = await client.group(7172);
     // console.dir(group, { depth: Infinity });
 } catch (e) {
