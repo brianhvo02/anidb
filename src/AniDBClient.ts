@@ -1,9 +1,9 @@
 import { RemoteInfo, Socket, createSocket } from 'node:dgram';
-import { Anime, ANIME_MASK, generateAnimeMask } from './Anime.js';
-import { DEFAULT_LISTENING_PORT, DEFAULT_API_URL, DEFAULT_API_PORT, PROTOVER, ReturnCode } from './constants.js';
+import { Anime, ANIME_MASK, AnimeResult, generateAnimeMask } from './Anime.js';
+import { DEFAULT_LISTENING_PORT, DEFAULT_API_URL, DEFAULT_API_PORT, PROTOVER, ReturnCode, TAG_LENGTH, TAG_CHARACTERS } from './constants.js';
 import { EPISODE, Episode } from './Episode.js';
 import { GROUP_STATUS, GroupStatus } from './GroupStatus.js';
-import { FAnime, FILE_MASK, F_ANIME_MASK, File, generateFAnimeMask, generateFileMask } from './File.js';
+import { FAnime, FILE_MASK, F_ANIME_MASK, File, FileResult, generateFAnimeMask, generateFileMask } from './File.js';
 import { ANIME_BLOCK, AnimeBlock, CHARACTER, Character } from './Character.js';
 import { CREATOR, Creator } from './Creator.js';
 import { GROUP, GROUP_RELATION, Group, GroupRelation } from './Group.js';
@@ -13,6 +13,11 @@ const convertParams = (params: Record<string, string>) =>
         .map(([key, value]) => `${key}=${value}`)
         .join('&');
 
+interface Command {
+    command: string;
+    resolve: (value: Buffer | PromiseLike<Buffer>) => void;
+}
+
 export default class AniDBClient {
     private clientId: string;
     private version: number
@@ -20,7 +25,23 @@ export default class AniDBClient {
     private session?: string;
     private debug: Boolean;
 
+    private commandQueue: Command[] = [];
+    private commandHistory: Record<string, Command> = {};
+
+    private timer: NodeJS.Timeout;
+
     private constructor(clientId: string, version: number, socket: Socket, debug: boolean) {
+        socket.on('message', msg => {
+            const tag = msg.subarray(0, 5).toString('utf-8');
+            this.commandHistory[tag].resolve(msg);
+        });
+
+        this.timer = setInterval(() => {
+            const commandBlock = this.commandQueue.shift();
+            if (commandBlock)
+                socket.send(commandBlock.command);
+        }, 4000);
+
         this.clientId = clientId;
         this.version = version;
         this.socket = socket;
@@ -49,24 +70,41 @@ export default class AniDBClient {
         await new Promise<void>(resolve => socket.connect(apiPort, apiUrl, resolve));
 
         return new this(clientId, version, socket, debug);
-    }
+    }   
 
-    private onMessage = (resolve: (value: Buffer | PromiseLike<Buffer>) => void) => 
-        (msg: Buffer, _: RemoteInfo) => {
-            this.socket.removeListener('message', this.onMessage);
-            resolve(msg);
-        };
+    private generateTag(): string {
+        const tag = [...Array(TAG_LENGTH).keys()]
+            .reduce(acc => acc + TAG_CHARACTERS.charAt(Math.random() * TAG_CHARACTERS.length), '');
+        
+        return Object.keys(this.commandQueue).includes(tag)
+            ? this.generateTag()
+            : tag;
+    }
 
     sendCommand = async (command: string) => 
         new Promise<Buffer>(resolve => {
+            const tag = this.generateTag();
+            const taggedCommand = command + (
+                command.includes('=')
+                    ? `&tag=${tag}`
+                    : `tag=${tag}`
+            );
+
             if (this.debug)
-                console.log(command);
-            this.socket.on('message', this.onMessage(resolve));
-            this.socket.send(`${command}\r\n`);
+                console.log(taggedCommand);
+
+            const commandBlock = {
+                command: `${taggedCommand}\r\n`,
+                resolve
+            }
+
+            this.commandHistory[tag] = commandBlock;
+            this.commandQueue.push(commandBlock);
         });
 
     disconnect = async () => {
         await this.logout();
+        clearTimeout(this.timer);
         await new Promise<void>(resolve => this.socket.close(resolve));
     };
 
@@ -80,11 +118,11 @@ export default class AniDBClient {
             enc: 'UTF-8'
         });
         const data = await this.sendCommand(`AUTH ${params}`);
-        const returnCode = data.subarray(0, 3).toString('utf-8');
+        const returnCode = data.subarray(6, 9).toString('utf-8');
 
         switch (returnCode) {
             case ReturnCode.LOGIN_ACCEPTED:
-                this.session = data.subarray(4, data.indexOf(32, 4)).toString('utf-8');
+                this.session = data.subarray(10, data.indexOf(32, 10)).toString('utf-8');
                 return this.session;
             default:
                 console.log(data.toString('utf-8'));
@@ -98,20 +136,24 @@ export default class AniDBClient {
         const res = await this.sendCommand(`LOGOUT s=${this.session}`);
         console.log(res.toString());
     }
-    
-    async anime<T extends keyof Anime>(aid: number, fields?: Array<T>) {
+
+    async anime<T extends keyof Anime>(aid: number, fields?: Array<T>): Promise<AnimeResult<T>>;
+    async anime<T extends keyof Anime>(aname: string, fields?: Array<T>): Promise<AnimeResult<T>>;
+    async anime<T extends keyof Anime>(a: number | string, fields?: Array<T>) {
         if (!this.session) 
             throw new Error('Not authenticated');
 
-        const keys = fields ?? Object.keys(ANIME_MASK) as Array<keyof Anime>;
+        const keys = fields ?? Object.keys(ANIME_MASK) as Array<T>;
 
-        const params = convertParams({
-            aid: `${aid}`,
+        const rawParams: Record<string, string> = {
             amask: generateAnimeMask(keys),
             s: this.session
-        });
+        }
+        rawParams[typeof a === 'number' ? 'aid' : 'aname'] = `${a}`;
+        const params = convertParams(rawParams);
+        
         const data = await this.sendCommand(`ANIME ${params}`);
-        const returnCode = data.subarray(0, 3).toString('utf-8');
+        const returnCode = data.subarray(6, 9).toString('utf-8');
 
         switch (returnCode) {
             case ReturnCode.ANIME:
@@ -126,27 +168,41 @@ export default class AniDBClient {
                         return [key, raw[i].length ? raw[i].split(/'|,/g).map(val => Constructor(val)) : new ANIME_MASK[key][2](0)];
                     
                     if (ANIME_MASK[key][2] !== Array)
-                        return [key, (ANIME_MASK[key][2] as NumberConstructor | StringConstructor)(raw[i] || 0)];
+                        return [key, (ANIME_MASK[key][2] as NumberConstructor | StringConstructor)(raw[i] || '')];
                 });
 
                 return Object.fromEntries(entries as any) as Pick<Anime, T>;
+            case ReturnCode.NO_SUCH_ANIME:
+                return;
             default:
                 console.log(data.toString('utf-8'));
                 throw new Error('Unexpected result');
         }
     }
 
-    async episode(aid: number, episodeNumber: string | number) {
+    async episode(eid: number): Promise<Episode | undefined>;
+    async episode(aname: string, episodeNumber: string | number): Promise<Episode | undefined>;
+    async episode(aid: number, episodeNumber: string | number): Promise<Episode | undefined>;
+    async episode(a: string | number, episodeNumber?: string | number) {
         if (!this.session) 
             throw new Error('Not authenticated');
 
-        const params = convertParams({
-            aid: `${aid}`,
-            epno: `${episodeNumber}`,
+        const rawParams: Record<string, string> = {
             s: this.session
-        });
+        }
+        rawParams[
+            typeof a === 'number' 
+                ? episodeNumber == undefined
+                    ? 'eid'
+                    : 'aid'
+                : 'aname'
+        ] = `${a}`;
+        if (episodeNumber)
+            rawParams['epno'] = `${episodeNumber}`;
+        const params = convertParams(rawParams);
+
         const data = await this.sendCommand(`EPISODE ${params}`);
-        const returnCode = data.subarray(0, 3).toString('utf-8');
+        const returnCode = data.subarray(6, 9).toString('utf-8');
 
         switch (returnCode) {
             case ReturnCode.EPISODE:
@@ -158,6 +214,8 @@ export default class AniDBClient {
                     .map((val, i) => [keys[i], EPISODE[keys[i]](val)]);
 
                 return Object.fromEntries(entries) as Episode;
+            case ReturnCode.NO_SUCH_EPISODE:
+                return;
             default:
                 console.log(data.toString('utf-8'));
                 throw new Error('Unexpected result');
@@ -173,7 +231,7 @@ export default class AniDBClient {
             s: this.session
         });
         const data = await this.sendCommand(`GROUPSTATUS ${params}`);
-        const returnCode = data.subarray(0, 3).toString('utf-8');
+        const returnCode = data.subarray(6, 9).toString('utf-8');
 
         switch (returnCode) {
             case ReturnCode.GROUP_STATUS:
@@ -189,6 +247,9 @@ export default class AniDBClient {
                         
                         return Object.fromEntries(entries) as GroupStatus;
                     });
+            case ReturnCode.NO_SUCH_GROUP:
+            case ReturnCode.NO_SUCH_ANIME:
+                return;
             default:
                 console.log(data.toString('utf-8'));
                 throw new Error('Unexpected result');
@@ -196,25 +257,89 @@ export default class AniDBClient {
     }
 
     async file<F extends keyof File, A extends keyof FAnime>(
+        fid: number,
+        fileFields?: F[], animeFields?: A[]
+    ): Promise<Pick<File, F> | Pick<FAnime, A> | string[] | undefined>;
+
+    async file<F extends keyof File, A extends keyof FAnime>(
+        size: number, ed2k: string,
+        fileFields?: F[], animeFields?: A[]
+    ): Promise<FileResult<F, A>>;
+
+    async file<F extends keyof File, A extends keyof FAnime>(
+        aname: string, gname: string, episodeNumber: string | number, 
+        fileFields?: F[], animeFields?: A[]
+    ): Promise<FileResult<F, A>>;
+
+    async file<F extends keyof File, A extends keyof FAnime>(
+        aname: string, gid: number, episodeNumber: string | number, 
+        fileFields?: F[], animeFields?: A[]
+    ): Promise<FileResult<F, A>>;
+
+    async file<F extends keyof File, A extends keyof FAnime>(
+        aid: number, gname: string, episodeNumber: string | number, 
+        fileFields?: F[], animeFields?: A[]
+    ): Promise<FileResult<F, A>>;
+    
+    async file<F extends keyof File, A extends keyof FAnime>(
         aid: number, gid: number, episodeNumber: string | number, 
-        fileFields?: Array<F>, animeFields?: Array<A>
+        fileFields?: F[], animeFields?: A[]
+    ): Promise<FileResult<F, A>>;
+
+    async file<F extends keyof File, A extends keyof FAnime>(
+        param1: number | string, 
+        param2?: number | string | F[], 
+        param3?: string | number | F[] | A[], 
+        param4?: F[] | A[], 
+        param5?: A[]
     ) {
         if (!this.session) 
             throw new Error('Not authenticated');
 
-        const fileKeys = fileFields ?? Object.keys(FILE_MASK) as Array<keyof File>;
-        const animeKeys = animeFields ?? Object.keys(F_ANIME_MASK) as Array<keyof FAnime>;
-
-        const params = convertParams({
-            aid: `${aid}`,
-            gid: `${gid}`,
-            epno: `${episodeNumber}`,
-            fmask: generateFileMask(fileKeys),
-            amask: generateFAnimeMask(animeKeys),
+        const rawParams: Record<string, string> = {
             s: this.session
-        });
+        }
+
+        let fileKeys: F[];
+        let animeKeys: A[];
+
+        switch (typeof param3) {
+            case 'string':
+            case 'number':
+                rawParams[
+                    typeof param1 === 'number'
+                        ? 'aid'
+                        : 'aname'
+                ] = `${param1}`;
+                rawParams[
+                    typeof param2 === 'number'
+                        ? 'gid'
+                        : 'gname'
+                ] = `${param2}`;
+                rawParams['epno'] = `${param3}`;
+
+                fileKeys = (param4 as F[] | undefined) ?? Object.keys(FILE_MASK) as F[];
+                animeKeys = param5 ?? Object.keys(F_ANIME_MASK) as A[];
+                break;
+            default:
+                if (typeof param2 === 'string') {
+                    rawParams['size'] = `${param1}`;
+                    rawParams['ed2k'] = `${param2}`;
+                    fileKeys = (param3 as F[] | undefined) ?? Object.keys(FILE_MASK) as F[];
+                    animeKeys = (param4 as A[] | undefined) ?? Object.keys(F_ANIME_MASK) as A[];
+                } else {
+                    rawParams['fid'] = `${param1}`;
+                    fileKeys = (param2 as F[] | undefined) ?? Object.keys(FILE_MASK) as F[];
+                    animeKeys = (param3 as A[] | undefined) ?? Object.keys(F_ANIME_MASK) as A[];
+                }
+        }
+
+        rawParams['fmask'] = generateFileMask(fileKeys);
+        rawParams['amask'] = generateFAnimeMask(animeKeys);
+        const params = convertParams(rawParams);
+
         const data = await this.sendCommand(`FILE ${params}`);
-        const returnCode = data.subarray(0, 3).toString('utf-8');
+        const returnCode = data.subarray(6, 9).toString('utf-8');
 
         switch (returnCode) {
             case ReturnCode.FILE:
@@ -228,8 +353,7 @@ export default class AniDBClient {
                     if (Constructor !== null) 
                         return [key, raw[i].length ? raw[i].split(/'|,/g).map(val => Constructor(val)) : new FILE_MASK[key][2](0)];
                     
-                    if (FILE_MASK[key][2] !== Array)
-                        return [key, (FILE_MASK[key][2] as NumberConstructor | StringConstructor)(raw[i] || 0)];
+                    return [key, (FILE_MASK[key][2] as NumberConstructor | StringConstructor)(raw[i] || '')];
                 });
 
                 const animeEntries = animeKeys.map((key, j) => {
@@ -239,21 +363,17 @@ export default class AniDBClient {
                     if (Constructor !== null) 
                         return [key, raw[i].length ? raw[i].split(/'|,/g).map(val => Constructor(val)) : new F_ANIME_MASK[key][2](0)];
                     
-                    if (F_ANIME_MASK[key][2] !== Array)
-                        return [key, (F_ANIME_MASK[key][2] as NumberConstructor | StringConstructor)(raw[i] || 0)];
+                    return [key, (F_ANIME_MASK[key][2] as NumberConstructor | StringConstructor)(raw[i] || '')];
                 });
 
-                return {
-                    file: Object.fromEntries(fileEntries as any) as Pick<File, F>,
-                    anime: Object.fromEntries(animeEntries as any) as Pick<FAnime, A>
-                };
+                return Object.fromEntries(fileEntries.concat(animeEntries)) as Pick<File, F> | Pick<FAnime, A>;
             case ReturnCode.MULTIPLE_FILES_FOUND:
-                return {
-                    fileIds: data
-                        .subarray(data.indexOf(10) + 1, data.lastIndexOf(10))
-                        .toString('utf-8')
-                        .split('|')
-                }
+                return data
+                    .subarray(data.indexOf(10) + 1, data.lastIndexOf(10))
+                    .toString('utf-8')
+                    .split('|');
+            case ReturnCode.NO_SUCH_FILE:
+                return;
             default:
                 console.log(data.toString('utf-8'));
                 throw new Error('Unexpected result');
@@ -269,7 +389,7 @@ export default class AniDBClient {
             s: this.session
         });
         const data = await this.sendCommand(`CHARACTER ${params}`);
-        const returnCode = data.subarray(0, 3).toString('utf-8');
+        const returnCode = data.subarray(6, 9).toString('utf-8');
 
         switch (returnCode) {
             case ReturnCode.CHARACTER:
@@ -298,6 +418,8 @@ export default class AniDBClient {
                     });
                 
                 return Object.fromEntries(entries) as Character;
+            case ReturnCode.NO_SUCH_CHARACTER:
+                return;
             default:
                 console.log(data.toString('utf-8'));
                 throw new Error('Unexpected result');
@@ -313,7 +435,7 @@ export default class AniDBClient {
             s: this.session
         });
         const data = await this.sendCommand(`CREATOR ${params}`);
-        const returnCode = data.subarray(0, 3).toString('utf-8');
+        const returnCode = data.subarray(6, 9).toString('utf-8');
 
         switch (returnCode) {
             case ReturnCode.CREATOR:
@@ -325,6 +447,8 @@ export default class AniDBClient {
                     .map((val, i) => [keys[i], CREATOR[keys[i]](val)]);
                     
                 return Object.fromEntries(entries) as Creator;
+            case ReturnCode.NO_SUCH_CREATOR:
+                return;
             default:
                 console.log(data.toString('utf-8'));
                 throw new Error('Unexpected result');
@@ -340,7 +464,7 @@ export default class AniDBClient {
             s: this.session
         });
         const data = await this.sendCommand(`GROUP ${params}`);
-        const returnCode = data.subarray(0, 3).toString('utf-8');
+        const returnCode = data.subarray(6, 9).toString('utf-8');
 
         switch (returnCode) {
             case ReturnCode.GROUP:
@@ -367,7 +491,8 @@ export default class AniDBClient {
                     });
                         
                 return Object.fromEntries(entries) as Group;
-
+            case ReturnCode.NO_SUCH_GROUP:
+                return;
             default:
                 console.log(data.toString('utf-8'));
                 throw new Error('Unexpected result');

@@ -7,7 +7,8 @@
     "scripts": {
         "build": "tsc",
         "start": "npm run build && node dist/index.js",
-        "cmd": "npm run build && node dist/cmd.js"
+        "cmd": "npm run build && node dist/utils/cmd.js",
+        "hash": "npm run build && NODE_OPTIONS=--openssl-legacy-provider node dist/utils/hash.js"
     },
     "keywords": [],
     "author": "",

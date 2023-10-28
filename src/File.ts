@@ -24,8 +24,8 @@ export const FILE_MASK = {
     videoResolution:        [ 2,   2,        String,   null ],
     fileType:               [ 2,   1,        String,   null ],
 
-    dubLanguage:            [ 3, 128,        String,   null ],
-    subLanguage:            [ 3,  64,        String,   null ],
+    dubLanguage:            [ 3, 128, Array<String>, String ],
+    subLanguage:            [ 3,  64, Array<String>, String ],
     lengthInSeconds:        [ 3,  32,        Number,   null ],
     description:            [ 3,  16,        String,   null ],
     airedDate:              [ 3,   8,        Number,   null ],
@@ -57,9 +57,9 @@ export const F_ANIME_MASK = {
     synonyms:               [ 1,   4, Array<String>, String ],
 
     episodeNumber:          [ 2, 128,        Number,   null ],
-    episodeName:            [ 2,  64,        Number,   null ],
+    episodeName:            [ 2,  64,        String,   null ],
     episodeRomajiName:      [ 2,  32,        String,   null ],
-    episodeKanjiname:       [ 2,  16,        String,   null ],
+    episodeKanjiName:       [ 2,  16,        String,   null ],
     episodeRating:          [ 2,   8,        Number,   null ],
     episodeVoteCount:       [ 2,   4,        Number,   null ],
 
@@ -95,3 +95,6 @@ export const generateFAnimeMask = <T extends keyof FAnime>(fields: Array<T>) => 
 
     return mask.toString('hex');
 }
+
+export type FileResult<F extends keyof File, A extends keyof FAnime> = 
+    Pick<File, F> | Pick<FAnime, A> | string[] | undefined;

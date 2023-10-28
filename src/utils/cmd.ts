@@ -1,6 +1,6 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import AniDBClient from './AniDBClient.js';
+import AniDBClient from '../AniDBClient.js';
 import 'dotenv/config';
 
 const rl = createInterface({ input, output });

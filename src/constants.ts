@@ -3,6 +3,9 @@ export const DEFAULT_API_URL        = 'api.anidb.net';
 export const DEFAULT_API_PORT       = 9000;
 export const PROTOVER               = 3;
 
+export const TAG_CHARACTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+export const TAG_LENGTH = 5;
+
 export enum ReturnCode {
     LOGIN_ACCEPTED                           = '200',
     LOGIN_ACCEPTED_NEW_VERSION               = '201',

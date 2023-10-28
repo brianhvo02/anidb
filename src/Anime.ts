@@ -60,3 +60,5 @@ export const generateAnimeMask = <T extends keyof Anime>(fields: Array<T>) => {
 
     return mask.toString('hex');
 }
+
+export type AnimeResult<T extends keyof Anime> = Pick<Anime, T> | undefined;
