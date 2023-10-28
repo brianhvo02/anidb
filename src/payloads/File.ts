@@ -56,7 +56,7 @@ export const F_ANIME_MASK = {
     shortNames:             [ 1,   8, Array<String>, String ],
     synonyms:               [ 1,   4, Array<String>, String ],
 
-    episodeNumber:          [ 2, 128,        Number,   null ],
+    episodeNumber:          [ 2, 128,        String,   null ],
     episodeName:            [ 2,  64,        String,   null ],
     episodeRomajiName:      [ 2,  32,        String,   null ],
     episodeKanjiName:       [ 2,  16,        String,   null ],

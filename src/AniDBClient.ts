@@ -1,4 +1,4 @@
-import { RemoteInfo, Socket, createSocket } from 'node:dgram';
+import { Socket, createSocket } from 'node:dgram';
 import { Anime, ANIME_MASK, AnimeResult, generateAnimeMask } from './payloads/Anime.js';
 import { DEFAULT_LISTENING_PORT, DEFAULT_API_URL, DEFAULT_API_PORT, PROTOVER, ReturnCode, TAG_LENGTH, TAG_CHARACTERS } from './constants.js';
 import { EPISODE, Episode } from './payloads/Episode.js';
