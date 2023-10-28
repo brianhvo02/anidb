@@ -1,8 +1,5 @@
-import { createHash } from 'crypto';
 import AniDBClient from './AniDBClient.js';
 import 'dotenv/config';
-import { createReadStream } from 'fs';
-import { open } from 'fs/promises';
 
 if (!process.env.CLIENT_ID)
     throw new Error('No CLIENT_ID provided');
@@ -15,6 +12,8 @@ const client = await AniDBClient.init(process.env.CLIENT_ID, 1, true);
 
 try {
     await client.authenticate(process.env.USERNAME, process.env.PASSWORD);
+    console.log('Logged in as:', process.env.USERNAME);
+
     // const anime1 = await client.anime(13538);
     // console.log(anime1);
     // const anime2 = await client.anime('Tsurune: The Linking Shot');

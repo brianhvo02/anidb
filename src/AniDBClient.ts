@@ -64,7 +64,8 @@ export default class AniDBClient {
           
         socket.on('listening', () => {
             const address = socket.address();
-            console.log(`socket listening ${address.address}:${address.port}`);
+            if (debug)
+                console.log(`socket listening ${address.address}:${address.port}`);
         });
 
         await new Promise<void>(resolve => socket.bind(listeningPort, resolve));
@@ -127,6 +128,7 @@ export default class AniDBClient {
                 return this.session;
             default:
                 console.log(data.toString('utf-8'));
+                throw new Error('Unexpected result');
         }
     }
 
@@ -134,8 +136,16 @@ export default class AniDBClient {
         if (!this.session)
             return;
 
-        const res = await this.sendCommand(`LOGOUT s=${this.session}`);
-        console.log(res.toString());
+        const data = await this.sendCommand(`LOGOUT s=${this.session}`);
+        const returnCode = data.subarray(6, 9).toString('utf-8');
+
+        switch (returnCode) {
+            case ReturnCode.LOGGED_OUT:
+                return;
+            default:
+                console.log(data.toString('utf-8'));
+                throw new Error('Unexpected result');
+        }
     }
 
     async anime<T extends keyof Anime>(aid: number, fields?: T[]): Promise<AnimeResult<T>>;
