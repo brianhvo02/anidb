@@ -21,7 +21,7 @@ interface Command {
 
 export default class AniDBClient {
     private clientId: string;
-    private version: number
+    private version: number | string;
     private socket: Socket;
     private session?: string;
     private debug: Boolean;
@@ -31,7 +31,7 @@ export default class AniDBClient {
 
     private timer: NodeJS.Timeout;
 
-    private constructor(clientId: string, version: number, socket: Socket, debug: boolean) {
+    private constructor(clientId: string, version: number | string, socket: Socket, debug: boolean) {
         socket.on('message', msg => {
             const tag = msg.subarray(0, 5).toString('utf-8');
             this.commandHistory[tag].resolve(msg);
@@ -50,7 +50,7 @@ export default class AniDBClient {
     }
 
     static async init(
-        clientId: string, version: number, debug = false,
+        clientId: string, version: number | string, debug = false,
         listeningPort = DEFAULT_LISTENING_PORT, 
         apiUrl = DEFAULT_API_URL,
         apiPort = DEFAULT_API_PORT

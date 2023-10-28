@@ -7,7 +7,9 @@ const rl = createInterface({ input, output });
 
 if (!process.env.CLIENT_ID)
     throw new Error('No CLIENT_ID provided');
-const client = await AniDBClient.init(process.env.CLIENT_ID, 1, true);
+if (!process.env.CLIENT_VERSION)
+    throw new Error('No CLIENT_VERSION provided');
+const client = await AniDBClient.init(process.env.CLIENT_ID, process.env.CLIENT_VERSION, true);
 
 if (process.env.USERNAME && process.env.PASSWORD)
     console.log('Session ID:', await client.authenticate(process.env.USERNAME, process.env.PASSWORD));

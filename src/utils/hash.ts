@@ -51,11 +51,11 @@ if (isCLI) {
     console.log('Size:', size);
     console.log('Hash:', ed2k);
 
-    if (!process.env.CLIENT_ID || !process.env.USERNAME || !process.env.PASSWORD)
+    if (!process.env.CLIENT_ID || !process.env.CLIENT_VERSION || !process.env.USERNAME || !process.env.PASSWORD)
         process.exit(0);
 
     console.log('Searching file info in AniDB...')
-    const client = await AniDBClient.init(process.env.CLIENT_ID, 1);
+    const client = await AniDBClient.init(process.env.CLIENT_ID, process.env.CLIENT_VERSION);
 
     try {
         await client.authenticate(process.env.USERNAME, process.env.PASSWORD);

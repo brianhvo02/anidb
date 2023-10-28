@@ -3,12 +3,14 @@ import 'dotenv/config';
 
 if (!process.env.CLIENT_ID)
     throw new Error('No CLIENT_ID provided');
+if (!process.env.CLIENT_VERSION)
+    throw new Error('No CLIENT_VERSION provided');
 if (!process.env.USERNAME)
     throw new Error('No USERNAME provided');
 if (!process.env.PASSWORD)
     throw new Error('No PASSWORD provided');
 
-const client = await AniDBClient.init(process.env.CLIENT_ID, 1, true);
+const client = await AniDBClient.init(process.env.CLIENT_ID, process.env.CLIENT_VERSION, true);
 
 try {
     await client.authenticate(process.env.USERNAME, process.env.PASSWORD);
