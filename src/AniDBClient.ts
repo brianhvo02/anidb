@@ -141,12 +141,15 @@ export default class AniDBClient {
 
         switch (returnCode) {
             case ReturnCode.LOGGED_OUT:
+                this.session = undefined;
                 return;
             default:
                 console.log(data.toString('utf-8'));
                 throw new Error('Unexpected result');
         }
     }
+
+    isLoggedIn = () => Boolean(this.session);
 
     async anime<T extends keyof Anime>(aid: number, fields?: T[]): Promise<AnimeResult<T>>;
     async anime<T extends keyof Anime>(aname: string, fields?: T[]): Promise<AnimeResult<T>>;
